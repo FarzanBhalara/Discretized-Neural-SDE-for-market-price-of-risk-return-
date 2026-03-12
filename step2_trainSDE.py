@@ -59,6 +59,7 @@ for epoch in range(epochs):
 
 print("Training complete.")
 
+#epoch vs loss graph
 import matplotlib.pyplot as plt
 
 plt.figure(figsize=(8,5))
