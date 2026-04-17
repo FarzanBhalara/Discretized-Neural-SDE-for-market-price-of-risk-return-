@@ -28,6 +28,7 @@ BETA_SHRINK_TARGET = 1.0
 BETA_SHRINK_WEIGHT = 0.15
 BETA_CLIP = 5.0
 TARGET_HORIZON = 20
+SIGMA_TARGET_KEY = f"sigma_target_{TARGET_HORIZON}d"
 
 FACTOR_CONFIG = {
     "epochs": 180,
@@ -46,8 +47,9 @@ FACTOR_CONFIG = {
     "high_vol_clip": 6.0,
     "eps": 1e-6,
     "lookback": 60,
+    # Covariance sigma is trained, calibrated, and evaluated on one 20d target.
     "target_horizon": TARGET_HORIZON,
-    "nll_target_key": "sigma_target_5d",
+    "sigma_target_key": SIGMA_TARGET_KEY,
     "predict_delta_log_var": True,
     "use_baseline_feature": True,
 }
@@ -69,8 +71,9 @@ IDIO_CONFIG = {
     "high_vol_clip": 5.0,
     "eps": 1e-6,
     "lookback": 60,
+    # Covariance sigma is trained, calibrated, and evaluated on one 20d target.
     "target_horizon": TARGET_HORIZON,
-    "nll_target_key": "sigma_target_5d",
+    "sigma_target_key": SIGMA_TARGET_KEY,
     "predict_delta_log_var": True,
     "use_baseline_feature": True,
 }
@@ -254,7 +257,7 @@ def main():
     factor_calibration, factor_log_var, factor_sigma = _calibrate_sigma(
         raw_log_var=factor_pred["log_var"],
         baseline_sigma=factor_ewma,
-        target_sigma=factor_panel["sigma_target_20d"],
+        target_sigma=factor_panel[SIGMA_TARGET_KEY],
         valid_mask=factor_val_mask,
         eps=FACTOR_CONFIG["eps"],
     )
@@ -280,7 +283,7 @@ def main():
     idio_calibration, idio_log_var, idio_sigma = _calibrate_sigma(
         raw_log_var=idio_pred["log_var"],
         baseline_sigma=idio_ewma,
-        target_sigma=idio_panel["sigma_target_20d"],
+        target_sigma=idio_panel[SIGMA_TARGET_KEY],
         valid_mask=idio_val_mask,
         eps=IDIO_CONFIG["eps"],
     )
@@ -304,14 +307,14 @@ def main():
     marginal_calibration, marginal_log_var, sigma_marginal = _calibrate_sigma(
         raw_log_var=np.log(np.square(sigma_marginal_raw) + 1e-8),
         baseline_sigma=marginal_ewma,
-        target_sigma=panel["sigma_target_20d"],
+        target_sigma=panel[SIGMA_TARGET_KEY],
         valid_mask=marginal_val_mask,
         eps=1e-8,
     )
     marginal_blend_alpha, marginal_spike_scale, sigma_marginal, marginal_val_score = _align_marginal_sigma(
         pred_sigma=sigma_marginal,
         baseline_sigma=marginal_ewma,
-        target_sigma=panel["sigma_target_20d"],
+        target_sigma=panel[SIGMA_TARGET_KEY],
         valid_mask=marginal_val_mask,
         high_vol_weight=1.5,
         max_alpha=0.30,

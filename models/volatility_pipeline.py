@@ -162,10 +162,11 @@ def _prepare_sigma_data(panel, config, train_date_mask=None, val_date_mask=None)
         feature_mean=config.get("feature_mean"),
         feature_std=config.get("feature_std"),
     )
-    sigma_target_key = str(config.get("sigma_target_key", "sigma_target_20d"))
-    nll_target_key = str(config.get("nll_target_key", sigma_target_key))
+    # Use one sigma horizon end-to-end so the NLL, calibration, and RV losses
+    # all refer to the same target scale.
+    target_horizon = int(config.get("target_horizon", 20))
+    sigma_target_key = str(config.get("sigma_target_key", f"sigma_target_{target_horizon}d"))
     sigma_target = np.asarray(panel[sigma_target_key], dtype=np.float32)
-    nll_target = np.asarray(panel[nll_target_key], dtype=np.float32)
     target_var = np.square(np.clip(sigma_target, 0.0, None))
     train_var = target_var[train_mask]
     ref_var = np.nanmedian(train_var[np.isfinite(train_var)]) if int(train_mask.sum()) > 0 else 1.0
@@ -191,7 +192,6 @@ def _prepare_sigma_data(panel, config, train_date_mask=None, val_date_mask=None)
         "baseline_log_var": baseline_log_var,
         "loss_weight_panel": loss_weight_panel,
         "sigma_target": sigma_target,
-        "nll_target": nll_target,
     }
 
 

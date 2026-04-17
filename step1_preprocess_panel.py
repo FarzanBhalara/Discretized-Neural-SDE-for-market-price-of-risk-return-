@@ -20,6 +20,8 @@ from models.panel_data import (
 
 LOOKBACK = 60
 SIGMA_HORIZONS = (5, 20)
+# Step 1 still stores both horizons for research/debugging, but the covariance
+# stage is standardized on the 20d sigma target for training, calibration, and evaluation.
 LAMBDA_HORIZONS = (20, 60)
 ALL_FORWARD_HORIZONS = tuple(sorted(set(SIGMA_HORIZONS + LAMBDA_HORIZONS)))
 TRAIN_RATIO = 0.70

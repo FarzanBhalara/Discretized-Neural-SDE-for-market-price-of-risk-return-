@@ -19,10 +19,10 @@ def build_idio_panel(panel, beta_panel, beta_valid_mask, target_horizon=20):
     next_residual_df = residual_df.shift(-1)
     sigma_targets = build_forward_vol_targets(
         residual_df,
-        horizons=tuple(sorted({5, int(target_horizon)})),
+        horizons=(int(target_horizon),),
     )
-    sigma_target_5d = sigma_targets["sigma_target_5d"]
-    sigma_target_20d = sigma_targets[f"sigma_target_{int(target_horizon)}d"]
+    sigma_target_key = f"sigma_target_{int(target_horizon)}d"
+    sigma_target = sigma_targets[sigma_target_key]
 
     valid_sigma_mask = (
         panel["lookback_60_mask"].astype(bool)
@@ -35,7 +35,6 @@ def build_idio_panel(panel, beta_panel, beta_valid_mask, target_horizon=20):
         **panel,
         "excess_return": residual_df.to_numpy(dtype=np.float32),
         "next_excess_return": next_residual_df.to_numpy(dtype=np.float32),
-        "sigma_target_5d": sigma_target_5d.to_numpy(dtype=np.float32),
-        "sigma_target_20d": sigma_target_20d.to_numpy(dtype=np.float32),
+        sigma_target_key: sigma_target.to_numpy(dtype=np.float32),
         "valid_sigma_mask": valid_sigma_mask.astype(bool),
     }
