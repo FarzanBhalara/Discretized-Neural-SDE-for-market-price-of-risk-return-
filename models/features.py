@@ -206,6 +206,7 @@ def build_sigma_features_panel(panel, lookback=LONG_WINDOW):
 def build_lambda_date_features(panel, sigma_panel, beta_panel, factor_sigma=None, idio_sigma=None):
     market_series = _panel_df(panel, "market_excess_return")
     excess_df = _panel_df(panel, "excess_return")
+    price_df = _panel_df(panel, "adj_close")
     sigma_df = pd.DataFrame(sigma_panel, index=excess_df.index, columns=excess_df.columns)
     beta_df = pd.DataFrame(beta_panel, index=excess_df.index, columns=excess_df.columns)
     cross_df = build_cross_sectional_features(panel)
@@ -220,8 +221,20 @@ def build_lambda_date_features(panel, sigma_panel, beta_panel, factor_sigma=None
     market_df["mkt_vol_20"] = market_series.rolling(20, min_periods=20).std(ddof=0)
     market_df["mkt_vol_60"] = market_series.rolling(60, min_periods=60).std(ddof=0)
     market_df["mkt_ewma_vol"] = np.sqrt(market_series.pow(2).ewm(alpha=0.06, adjust=False).mean())
+    market_df["mkt_cumret_5"] = market_series.rolling(5, min_periods=5).sum()
     market_df["mkt_cumret_20"] = market_series.rolling(20, min_periods=20).sum()
     market_df["mkt_cumret_60"] = market_series.rolling(60, min_periods=60).sum()
+    market_df["mkt_cumret_120"] = market_series.rolling(120, min_periods=60).sum()
+    market_df["mkt_down_semivol_5"] = _rolling_semivol(market_series, 5, positive=False)
+    market_df["mkt_down_semivol_20"] = _rolling_semivol(market_series, 20, positive=False)
+    market_df["mkt_down_semivol_60"] = _rolling_semivol(market_series, 60, positive=False)
+    market_df["mkt_up_semivol_20"] = _rolling_semivol(market_series, 20, positive=True)
+    market_df["mkt_skew_20"] = market_series.rolling(20, min_periods=20).skew()
+    market_df["mkt_skew_60"] = market_series.rolling(60, min_periods=60).skew()
+    market_df["mkt_bad_day_frac_20"] = market_series.lt(0.0).rolling(20, min_periods=20).mean()
+    market_df["mkt_bad_day_frac_60"] = market_series.lt(0.0).rolling(60, min_periods=60).mean()
+    market_df["mkt_vol_spike_5_20"] = _safe_ratio(market_df["mkt_vol_5"], market_df["mkt_vol_20"])
+    market_df["mkt_vol_spike_20_60"] = _safe_ratio(market_df["mkt_vol_20"], market_df["mkt_vol_60"])
 
     date_df = pd.concat([market_df, cross_df], axis=1)
 
@@ -235,47 +248,60 @@ def build_lambda_date_features(panel, sigma_panel, beta_panel, factor_sigma=None
     date_df["ret_positive_frac"] = excess_df.gt(0).mean(axis=1)
     date_df["ret_dispersion"] = excess_df.std(axis=1, ddof=0)
 
-    # ------------------------------------------------------------------
-    # Regime-aware and return-predictive features
-    # ------------------------------------------------------------------
+    breadth_5 = excess_df.rolling(5, min_periods=5).sum().gt(0.0).mean(axis=1)
+    breadth_20 = excess_df.rolling(20, min_periods=20).sum().gt(0.0).mean(axis=1)
+    breadth_negative_5 = excess_df.rolling(5, min_periods=5).sum().lt(0.0).mean(axis=1)
+    breadth_negative_20 = excess_df.rolling(20, min_periods=20).sum().lt(0.0).mean(axis=1)
+    ma20 = price_df.rolling(20, min_periods=20).mean()
+    ma60 = price_df.rolling(60, min_periods=60).mean()
+    date_df["breadth_positive_5"] = breadth_5
+    date_df["breadth_positive_20"] = breadth_20
+    date_df["breadth_negative_5"] = breadth_negative_5
+    date_df["breadth_negative_20"] = breadth_negative_20
+    date_df["breadth_above_ma20"] = (price_df > ma20).mean(axis=1)
+    date_df["breadth_above_ma60"] = (price_df > ma60).mean(axis=1)
+    date_df["breadth_below_ma20"] = (price_df < ma20).mean(axis=1)
+    date_df["breadth_below_ma60"] = (price_df < ma60).mean(axis=1)
 
-    # Vol-regime ratio: short-term vs long-term sigma level.
-    # Spikes (ratio >> 1) historically accompany higher risk premia.
     sigma_5m = sigma_mean_series.rolling(5, min_periods=3).mean()
     sigma_60m = sigma_mean_series.rolling(60, min_periods=20).mean().clip(lower=1e-6)
     date_df["sigma_vol_ratio_5_60"] = sigma_5m / sigma_60m
 
-    # Normalised sigma level: z-score relative to its own 252d history.
-    # Captures whether market-wide vol is abnormally high or low.
     sigma_252m = sigma_mean_series.rolling(252, min_periods=60).mean()
     sigma_252s = sigma_mean_series.rolling(252, min_periods=60).std(ddof=0).clip(lower=1e-6)
     date_df["sigma_level_zscore"] = (sigma_mean_series - sigma_252m) / sigma_252s
 
-    # Market drawdown from rolling 252-day peak.
-    # Large drawdowns coincide with compressed or negative λ regimes.
     mkt_cum = (1.0 + market_series).cumprod()
     rolling_peak = mkt_cum.rolling(252, min_periods=60).max().clip(lower=1e-9)
     date_df["mkt_drawdown"] = (mkt_cum / rolling_peak - 1.0).clip(lower=-1.0, upper=0.0)
+    date_df["mkt_drawdown_change_5"] = date_df["mkt_drawdown"].diff(5)
+    date_df["mkt_drawdown_change_20"] = date_df["mkt_drawdown"].diff(20)
+    date_df["mkt_drawdown_speed_5"] = date_df["mkt_drawdown"].diff(5) / 5.0
+    date_df["mkt_drawdown_speed_20"] = date_df["mkt_drawdown"].diff(20) / 20.0
 
-    # Short and long market momentum (complement the 20/60d already present).
-    date_df["mkt_cumret_5"] = market_series.rolling(5, min_periods=5).sum()
-    date_df["mkt_cumret_120"] = market_series.rolling(120, min_periods=60).sum()
-
-    # 20-day rolling mean of cross-sectional return dispersion.
-    # High dispersion → higher investor uncertainty → higher implied λ.
     cs_disp = excess_df.std(axis=1)
     date_df["cs_ret_dispersion_20"] = cs_disp.rolling(20, min_periods=10).mean()
+    cs_downside = np.sqrt(excess_df.clip(upper=0.0).pow(2).mean(axis=1))
+    cs_downside_dispersion = excess_df.where(excess_df < 0.0).std(axis=1, ddof=0)
+    date_df["cs_downside_semivol"] = cs_downside
+    date_df["cs_downside_dispersion_20"] = cs_downside_dispersion.rolling(20, min_periods=10).mean()
 
-    # Risk-premium proxy: market drift minus half-variance (Kelly drift).
-    # A positive value signals favourable risk-premium conditions.
     mkt_mean_60 = market_series.rolling(60, min_periods=30).mean()
     mkt_var_60 = market_series.pow(2).rolling(60, min_periods=30).mean()
     date_df["risk_prem_proxy"] = mkt_mean_60 - 0.5 * mkt_var_60
 
-    # Dispersion regime: ratio of 5d to 20d cross-sectional dispersion.
     cs_disp_5 = cs_disp.rolling(5, min_periods=3).mean()
     cs_disp_20 = cs_disp.rolling(20, min_periods=10).mean().clip(lower=1e-6)
     date_df["cs_disp_ratio_5_20"] = cs_disp_5 / cs_disp_20
+    date_df["mkt_down_up_ratio_20"] = date_df["mkt_down_semivol_20"] / date_df["mkt_up_semivol_20"].clip(lower=1e-6)
+    date_df["mkt_stress_proxy"] = date_df["mkt_vol_spike_5_20"] * (1.0 + date_df["mkt_bad_day_frac_20"]) * (-date_df["mkt_drawdown"])
+    date_df["mkt_stress_proxy_broad"] = date_df["sigma_vol_ratio_5_60"] * (1.0 + date_df["breadth_negative_20"]) * (-date_df["mkt_drawdown"])
+
+    market_price = price_df.median(axis=1)
+    market_price_ma20 = market_price.rolling(20, min_periods=20).mean()
+    market_price_ma60 = market_price.rolling(60, min_periods=60).mean()
+    date_df["mkt_above_ma20"] = market_price / market_price_ma20 - 1.0
+    date_df["mkt_above_ma60"] = market_price / market_price_ma60 - 1.0
 
     if factor_sigma is not None:
         factor_sigma = pd.Series(np.asarray(factor_sigma, dtype=np.float32), index=excess_df.index)

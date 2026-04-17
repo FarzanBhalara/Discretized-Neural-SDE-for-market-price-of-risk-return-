@@ -25,6 +25,8 @@ ASSET_METRICS_CSV = "outputs/step3_covariance_asset_metrics.csv"
 NLL_METRICS_CSV = "outputs/step3_covariance_nll_metrics.csv"
 COMPONENT_PLOT = "outputs/step3_covariance_components_plot.png"
 HEATMAP_PLOT = "outputs/step3_covariance_heatmap_test.png"
+HEATMAP_NUM_ASSETS = 50
+HEATMAP_EXCLUDED_ASSETS = {"TATAMOTORS", "HDFC", "NESTLEIND"}
 
 
 def masked_row_mean(values, valid_mask):
@@ -131,31 +133,69 @@ def plot_components(panel, covariance):
 def plot_covariance_heatmap(panel, covariance):
     dates = pd.to_datetime(panel["dates"])
     assets = panel["asset_ids"].astype(str)
-    candidate_idx = np.where(
-        panel["test_date_mask"].astype(bool) & covariance["valid_covariance_mask"].astype(bool).any(axis=1)
+    test_idx = np.where(
+        panel["test_date_mask"].astype(bool)
+        & covariance["valid_covariance_mask"].astype(bool).any(axis=1)
     )[0]
-    if candidate_idx.size == 0:
-        return
-    idx = int(candidate_idx[-1])
-    valid = covariance["valid_covariance_mask"][idx].astype(bool)
-    asset_idx = np.where(valid)[0][:25]
-    if asset_idx.size < 2:
+    if test_idx.size == 0:
         return
 
-    cov = one_factor_covariance_matrix(
-        beta_vec=covariance["beta_market"][idx, asset_idx],
-        factor_var=float(covariance["factor_var"][idx]),
-        idio_var_vec=covariance["idio_var"][idx, asset_idx],
+    test_member = panel["member_mask"][test_idx].astype(bool)
+    member_counts = test_member.sum(axis=0)
+    valid_counts = covariance["valid_covariance_mask"][test_idx].astype(bool).sum(axis=0)
+    eligible_mask = np.array(
+        [(asset not in HEATMAP_EXCLUDED_ASSETS) and (valid_count > 0) for asset, valid_count in zip(assets, valid_counts)],
+        dtype=bool,
     )
+    candidate_order = sorted(
+        np.where(eligible_mask)[0],
+        key=lambda idx: (-int(valid_counts[idx]), -int(member_counts[idx]), str(assets[idx])),
+    )
+    asset_idx = np.asarray(candidate_order[:HEATMAP_NUM_ASSETS], dtype=int)
+    asset_idx = np.sort(asset_idx)
+    n_assets = len(asset_idx)
+    if n_assets < 2:
+        return
 
-    fig, ax = plt.subplots(figsize=(9, 7))
-    im = ax.imshow(cov, cmap="viridis")
-    ax.set_title(f"Conditional Covariance Heatmap: {dates[idx].date()}")
-    ax.set_xticks(range(len(asset_idx)))
-    ax.set_yticks(range(len(asset_idx)))
+    cov_sum = np.zeros((n_assets, n_assets), dtype=np.float64)
+    cov_count = np.zeros((n_assets, n_assets), dtype=np.int32)
+
+    for idx in test_idx:
+        valid = covariance["valid_covariance_mask"][idx, asset_idx].astype(bool)
+        valid_local_idx = np.where(valid)[0]
+        if valid_local_idx.size < 2:
+            continue
+
+        cov_slice = one_factor_covariance_matrix(
+            beta_vec=covariance["beta_market"][idx, asset_idx[valid_local_idx]],
+            factor_var=float(covariance["factor_var"][idx]),
+            idio_var_vec=covariance["idio_var"][idx, asset_idx[valid_local_idx]],
+        )
+        pair_index = np.ix_(valid_local_idx, valid_local_idx)
+        cov_sum[pair_index] += cov_slice
+        cov_count[pair_index] += 1
+
+    if not np.any(cov_count > 0):
+        return
+
+    cov_mean = np.full((n_assets, n_assets), np.nan, dtype=np.float64)
+    nonzero = cov_count > 0
+    cov_mean[nonzero] = cov_sum[nonzero] / cov_count[nonzero]
+
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad(color="#d9d9d9")
+
+    fig, ax = plt.subplots(figsize=(14, 12))
+    im = ax.imshow(cov_mean, cmap=cmap)
+    ax.set_title(
+        "Conditional Covariance Heatmap: Average Over Test Window "
+        f"({dates[test_idx[0]].date()} to {dates[test_idx[-1]].date()}, {len(test_idx)} days)"
+    )
+    ax.set_xticks(range(n_assets))
+    ax.set_yticks(range(n_assets))
     labels = [assets[i] for i in asset_idx]
-    ax.set_xticklabels(labels, rotation=90, fontsize=7)
-    ax.set_yticklabels(labels, fontsize=7)
+    ax.set_xticklabels(labels, rotation=90, fontsize=6)
+    ax.set_yticklabels(labels, fontsize=6)
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     fig.tight_layout()
     fig.savefig(HEATMAP_PLOT, dpi=300)
