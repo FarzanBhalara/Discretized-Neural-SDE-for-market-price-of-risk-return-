@@ -29,6 +29,7 @@ CLASS_METRICS_CSV = "outputs/step5_lambda_class_metrics.csv"
 HISTORY_CSV = "outputs/step5_lambda_history.csv"
 QUINTILES_CSV = "outputs/step5_lambda_quintiles.csv"
 LAMBDA_PLOT = "outputs/step5_lambda_plot.png"
+TRAIN_VAL_PLOT = "outputs/step5_lambda_train_val_plot.png"
 SCATTER_PLOT = "outputs/step5_lambda_scatter.png"
 QUINTILE_PLOT = "outputs/step5_lambda_quintiles.png"
 AFFINE_PLOT = "outputs/step5_lambda_affine_plot.png"
@@ -101,6 +102,34 @@ def plot_lambda_series(series_df: pd.DataFrame) -> None:
     ax.legend()
     fig.tight_layout()
     fig.savefig(LAMBDA_PLOT, dpi=300)
+    plt.close(fig)
+
+
+def plot_train_vs_validation(history_df: pd.DataFrame, best_epoch: int) -> None:
+    if history_df.empty:
+        return
+
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.plot(
+        history_df["epoch"],
+        history_df["train_selection"],
+        linewidth=1.4,
+        label="train market objective",
+    )
+    ax.plot(
+        history_df["epoch"],
+        history_df["val_selection"],
+        linewidth=1.4,
+        label="validation market objective",
+    )
+    ax.axvline(best_epoch, color="#d62728", linestyle="--", linewidth=1.0, label=f"best epoch = {best_epoch}")
+    ax.set_title("Lambda Training vs Validation Objective")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Market objective")
+    ax.grid(True, alpha=0.25)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(TRAIN_VAL_PLOT, dpi=300)
     plt.close(fig)
 
 
@@ -499,6 +528,7 @@ def main() -> None:
     quintiles_df.to_csv(QUINTILES_CSV, index=False)
 
     plot_lambda_series(series_df)
+    plot_train_vs_validation(history_df, best_epoch=int(summary["best_epoch"]))
     plot_affine_lambda_series(series_df, affine_params)
     plot_lambda_scatter(series_df)
     plot_lambda_downside(series_df)
@@ -532,6 +562,7 @@ def main() -> None:
     print(f"Saved history to {HISTORY_CSV}")
     print(f"Saved quintiles to {QUINTILES_CSV}")
     print(f"Saved lambda plot to {LAMBDA_PLOT}")
+    print(f"Saved train vs validation plot to {TRAIN_VAL_PLOT}")
     print(f"Saved affine lambda plot to {AFFINE_PLOT}")
     print(f"Saved downside plot to {DOWNSIDE_PLOT}")
     print(f"Saved scatter plot to {SCATTER_PLOT}")

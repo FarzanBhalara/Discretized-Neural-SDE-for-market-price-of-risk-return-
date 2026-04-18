@@ -1,2 +1,27 @@
 __pycache__/
-*.pyc
+*.py[cod]
+*.log
+.DS_Store
+
+# Generated pipeline artifacts: keep only a small showcase subset in outputs/.
+outputs/*
+!outputs/step3_covariance_panel_metrics.csv
+!outputs/step5_lambda_metrics.csv
+!outputs/step6_mu_metrics.csv
+!outputs/step3_covariance_components_plot.png
+!outputs/step5_lambda_plot.png
+!outputs/step5_lambda_train_val_plot.png
+!outputs/step6_mu_panel_plot.png
+outputs/*.pt
+outputs/*.npz
+
+# Intermediate step0 data artifacts can be regenerated if needed.
+data/nifty50_historical_membership_raw/
+data/nifty50_historical_membership_monthly.csv
+data/nifty50_member_price_coverage_by_date.csv
+data/nifty50_prices_yahoo_2010_2020.csv
+data/nifty50_prices_yahoo_resolved_2010_2020.csv
+data/nifty50_raw.csv
+data/nifty50_symbol_map.csv
+data/nifty50_symbol_resolution.csv
+data/nifty50_yahoo_download_status.csv
